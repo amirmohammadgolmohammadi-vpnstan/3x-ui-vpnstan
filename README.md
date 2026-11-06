@@ -1,201 +1,140 @@
-# 3x-ui frontend
+[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md) | [Türkçe](/README.tr_TR.md)
 
-React 19 + Ant Design 6 + TypeScript + Vite 8. Three SPA bundles —
-`index.html` (admin panel SPA, all `/panel/*` routes), `login.html`
-(login + 2FA), and `subpage.html` (public subscription viewer). All
-three are built into `../internal/web/dist/` and embedded into the Go binary
-via `embed.FS`.
+# VPNSTAN — RBAC Fork (admin6501)
 
-State is split between local `useState`, TanStack Query for server
-state, and `useTheme` / `useWebSocket` contexts. Form validation,
-API parsing, and the xray config model all run through a single
-shared Zod schema tree (see [Schemas](#schemas)).
+A customized fork of [MHSanaei/VPNSTAN](https://github.com/MHSanaei/3x-ui) — an advanced, open-source web panel for managing [Xray-core](https://github.com/XTLS/Xray-core) servers — extended with a built-in **multi-admin RBAC system**, **reseller scoping**, and a **fully offline installer** for air-gapped or restricted servers.
 
-## Dev
+> [!IMPORTANT]
+> This project is intended for personal use only. Please do not use it for illegal purposes or in a production environment.
 
-```sh
-npm install
-npm run dev
+## What this fork adds
+
+- **Role-Based Access Control (RBAC)** — manage multiple panel administrators from the **Admins** page, each with one of four roles:
+  - `super_admin` — full access to everything (the first/default admin).
+  - `manager` — manage inbounds & clients; **no** panel settings, Xray template, or admin management.
+  - `reseller` — scoped to assigned inbounds only; manages their own clients and **views** their inbounds read-only (cannot add / edit / enable-disable / delete inbounds).
+  - `readonly` — can view everything but cannot perform any write action.
+- **Audit log** — every admin action (create / update / delete admin, password reset, …) is recorded with actor, target, and timestamp.
+- **Offline install bundle** — install on a server with no internet using a self-contained tarball (panel binary + Xray-core + geo data). See [`offline/`](offline/).
+- **Fork-aware updater** — the panel's "check for update" reads releases from this fork (`admin6501/3x-ui`).
+- **PostgreSQL-safe migration** — SQLite → PostgreSQL migration copies all RBAC data (admins, roles, allowed inbounds, audit logs).
+
+## Reseller traffic allocation
+
+Give each **reseller** a total traffic budget and let the panel enforce it automatically:
+
+- Set a per-reseller **traffic quota** (in GB) on the **Admins** page — `0` means unlimited.
+- Usage is measured as the **combined up + download of all inbounds assigned to that reseller**.
+- When a reseller reaches their quota, the traffic job **auto-disables all of their assigned inbounds**, instantly cutting off their clients.
+- Inbounds disabled this way are tracked and **re-enabled automatically** once you raise or reset the reseller's quota.
+- **Over-selling is allowed** — only real consumption counts — and each reseller sees their own usage vs. quota on the Reseller dashboard.
+
+## Core features (from VPNSTAN)
+
+- **Multi-protocol inbounds** — VLESS, VMess, Trojan, Shadowsocks, WireGuard, Hysteria2, HTTP, SOCKS (Mixed), Dokodemo-door / Tunnel, and TUN.
+- **Modern transports & security** — TCP (Raw), mKCP, WebSocket, gRPC, HTTPUpgrade, and XHTTP, secured with TLS, XTLS, and REALITY.
+- **Per-client management** — traffic quotas, expiry dates, IP limits, live online status, share links, QR codes, and subscriptions.
+- **Multi-node support**, outbound & routing (WARP, custom rules, load balancers, proxy chaining).
+- **Built-in subscription server** with [custom page templates](docs/custom-subscription-templates.md).
+- **Telegram bot**, **RESTful API** with in-panel Swagger, **SQLite or PostgreSQL**, **13 UI languages**, dark/light themes, and **Fail2ban** IP-limit enforcement.
+
+## Panel features & options (this fork)
+
+Beyond the basics above, the panel also includes:
+
+- **Plans / Packages** — reusable client templates: prefill traffic, expiry and IP limit in one click.
+- **Client Groups** — bundle several inbounds so a single client subscription delivers multiple configs.
+- **Hosts** — publish custom subscription endpoints (address, port, remark, SNI) per inbound.
+- **Editable inbound protocol** — switch an existing inbound to another protocol; its clients are carried over (email, traffic quota, expiry, subscription id) and only their credentials are rebuilt, after a warning that previously shared links stop working.
+- **Subscription Remark Template** — build client link names from `{{VAR}}` tokens (`EMAIL`, `INBOUND`, `TRAFFIC_LEFT`, `DAYS_LEFT`, `HOST`, …); clearing the field restores the default template.
+- **Extra subscription formats** — JSON and Clash outputs (with optional routing rules) alongside the base64 subscription.
+- **Two-Factor Authentication (2FA / TOTP)** for admin logins.
+- **LDAP / Active Directory login** — authenticate panel admins against a directory.
+- **Email (SMTP) notifications** — event-based alerts with STARTTLS/TLS and a test-email button.
+- **External traffic webhook** — push client traffic events to an external URL.
+- **MTProto (Telegram) proxy** support via the bundled `mtg` sidecar.
+- **Jalali (Persian) / Gregorian calendar** toggle for all dates.
+- **In-panel Tutorials page** (super_admin only) — a multilingual quick-start guide to every panel section.
+- **Device (HWID) limit** — cap how many devices may fetch a client's subscription, using the `x-hwid` header Happ/Hiddify-style apps send. Panel-wide default plus a per-client override, a device list you can clear, and an optional strict mode that refuses apps sending no device id.
+- **Delete expired clients** — clear the ended clients of a single inbound from its row menu, or let the panel sweep them automatically a configurable number of days after they expire (off by default; `0` days never deletes).
+- **Subscription page branding** — build the page your users open in a browser from the panel: brand name, tagline, logo, announcement, colours, background, visible sections, support/Telegram/website buttons and custom CSS, with a live preview.
+- **Telegram shop — wallet & pay-as-you-go** — the bot sells configs to end users on a prepaid wallet. A user tops the wallet up (minimum and maximum per request are yours to set), optionally has to join a channel first, then creates a config with whatever traffic cap they like on the inbound you choose. **They are charged for what they actually consume**: set the price per GB in the panel, and if they buy 10 GB and use 1 GB, only one gigabyte's worth leaves their wallet. An optional daily fee per config covers time-based pricing. Metering runs every couple of minutes; when a wallet empties that user's configs switch off, and they come back the moment it is topped up. Every movement of money is written to a ledger, so a balance can always be explained. The **Telegram Shop** page shows wallets, top-up requests, configs and their live cost, and can credit or debit a wallet by hand.
+- **Custom roles** — build your own roles on the **Admins** page: name one, tick the permissions it should carry (view/manage inbounds, clients, plans, groups, hosts, nodes, panel settings, Xray config, admin management), and assign it like any built-in role. Tick *restrict to assigned inbounds* to make it behave as a reseller, quotas included. A role still held by an admin cannot be deleted.
+- **Reseller dashboard** — resellers land on their own dashboard after logging in: quota bars for traffic and client slots, client counts by state (active, online, expiring, ended), a per-inbound breakdown, the clients expiring inside the next week, and the most recently created ones.
+- **Disabling an admin takes their inbounds down** — switching a reseller account off also switches off the inbounds assigned to it, so their customers stop connecting, not just the reseller's own login. Re-enabling restores exactly what was taken down and never touches an inbound you disabled by hand.
+- **Hardened security** — CSRF protection, security headers, and configurable session lifetime.
+
+## Quick Start (online)
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/admin6501/3x-ui/main/install.sh)
 ```
 
-Vite serves on `http://localhost:5173/`. API calls and `/panel/*`
-routes proxy to the Go panel at `http://localhost:2053/`, so start
-the Go panel first (`go run main.go`) and then Vite. The proxy
-auto-rewrites `/panel`, `/panel/settings`, `/panel/inbounds`,
-`/panel/xray` to the matching Vite-served HTML, so the sidebar's
-production-style links work without round-tripping through Go.
+A random username, password, and web base path are generated during install. Run `x-ui` afterwards to open the management menu (start/stop, reset credentials, manage SSL, etc.).
 
-## Scripts
+## Offline install (no internet)
 
-| Command | What |
-|---|---|
-| `npm run dev` | Vite dev server with API + WS proxy to Go |
-| `npm run build` | Regenerates OpenAPI + Zod, then builds into `../internal/web/dist/` |
-| `npm run preview` | Serve the built bundle locally |
-| `npm run typecheck` | `tsc --noEmit` (strict, no emit) |
-| `npm run lint` | ESLint flat config (`@typescript-eslint` + `react-hooks`) |
-| `npm run test` | Vitest single run (schema fixtures, link parsers, …) |
-| `npm run test:watch` | Vitest watch mode |
-| `npm run gen:api` | Build `public/openapi.json` from `pages/api-docs/endpoints.ts` |
-| `npm run gen:zod` | Run the Go-side openapigen tool → `src/generated/{zod,types}.ts` |
+For servers with no internet access — or where the GitHub download is blocked:
 
-CI runs `typecheck`, `lint`, `test`, and `build` on every PR
-(see `../.github/workflows/ci.yml`).
+1. Copy `offline/x-ui-linux-amd64.tar.gz` and `install_offline.sh` to the server (any folder).
+2. Run:
 
-### One-off: scan for deprecated APIs
-
-Run this command to sweep the codebase for usages of APIs marked
-with the JSDoc `@deprecated` tag (AntD prop renames, Zod renames,
-removed Web APIs, etc.):
-
-```sh
-npx eslint --config eslint.deprecated.config.js src
+```bash
+chmod +x install_offline.sh
+sudo ./install_offline.sh                 # auto-detects the .tar.gz in the current dir
+# or pass it explicitly:
+sudo ./install_offline.sh /root/x-ui-linux-amd64.tar.gz
 ```
 
-It's a type-aware ESLint run against `eslint.deprecated.config.js`
-and is not wired into `npm run lint` because typed linting triples
-the wall-clock time.
+It makes **zero network calls** for the bundle (binary + Xray + geo all come from the tarball), prints the generated credentials **and the API token**, and on upgrade **preserves your existing `/etc/x-ui/x-ui.db`** while running migrations (including the RBAC tables). See [`offline/README.md`](offline/README.md) for details.
 
-## Production build
+> The prebuilt offline bundle is **amd64 / x86_64 only**. For other architectures, build a bundle for that arch from source.
 
-```sh
-npm run build
+## Supported platforms
+
+**Operating systems:** Ubuntu, Debian, Armbian, Fedora, CentOS, RHEL, AlmaLinux, Rocky Linux, Oracle Linux, Amazon Linux, Arch, Manjaro, openSUSE, Alpine, and Windows.
+
+**Architectures:** `amd64` · `arm64` (aarch64) · `armv7` · `armv6` · `386` · `s390x`.
+
+## Database
+
+- **SQLite** (default) — a single file at `/etc/x-ui/x-ui.db`. Zero setup, ideal for small/medium deployments.
+- **PostgreSQL** — recommended for high client counts or multi-node setups.
+
+Migrate an existing SQLite install to PostgreSQL (all RBAC data included):
+
+```bash
+x-ui migrate-db --dsn "postgres://xui:password@127.0.0.1:5432/xui?sslmode=disable"
+# then set XUI_DB_TYPE and XUI_DB_DSN in /etc/default/x-ui and restart:
+systemctl restart x-ui
 ```
 
-Outputs to `../internal/web/dist/` (HTML at the root, hashed JS/CSS under
-`assets/`). `manualChunks` splits AntD, icons, codemirror, and
-react-query into separate vendor bundles to keep the per-page
-initial JS small. The Go binary embeds this directory at compile
-time and `internal/web/controller/dist.go` serves the per-page HTML.
+The source SQLite file is left untouched; remove it once you have verified the new backend.
 
-## Layout
+## Environment Variables
 
-```
-frontend/
-├── index.html, login.html, subpage.html  # 3 Vite entries
-├── tsconfig.json
-├── eslint.config.js
-├── eslint.deprecated.config.js           # On-demand type-aware lint config that flags
-│                                         #   usages of APIs marked with JSDoc @deprecated
-├── vitest.config.ts
-├── vite.config.js
-├── scripts/
-│   └── build-openapi.mjs                 # endpoints.ts → openapi.json
-└── src/
-    ├── entries/         # Per-page bootstrap (createRoot + render)
-    ├── main.tsx         # Shared root for the admin SPA (index.html)
-    ├── routes.tsx       # react-router routes mounted under /panel/
-    ├── pages/           # One folder per route, page component + helpers
-    │   ├── index/, login/, inbounds/, clients/, xray/, nodes/,
-    │   ├── settings/, api-docs/, sub/
-    ├── layouts/         # AdminLayout (sidebar + header + outlet)
-    ├── components/      # Cross-page React components
-    ├── hooks/           # useClients, useTheme, useWebSocket, …
-    ├── api/             # Axios + CSRF interceptor, TanStack Query bridge,
-    │                    #   WebSocket client + queryClient.ts
-    ├── i18n/            # react-i18next init (locales in internal/web/translation/)
-    ├── lib/xray/        # Pure functions: link generation, defaults,
-    │                    #   form ⇄ wire adapters, protocol capabilities
-    ├── schemas/         # Zod source-of-truth (see "Schemas" below)
-    ├── generated/       # Code-generated zod + ts types from Go
-    │                    #   (DO NOT hand-edit — regenerated by gen:zod)
-    ├── models/          # Thin legacy types still in transit
-    │                    #   (DBInbound, Status, AllSetting, reality-targets)
-    ├── styles/          # Shared CSS modules
-    ├── test/            # Vitest specs + golden fixtures
-    │   ├── *.test.ts
-    │   ├── __snapshots__/
-    │   └── golden/fixtures/  # Per-(protocol × network × security) JSON
-    └── utils/           # HttpUtil, ClipboardManager, SizeFormatter, …
-```
+| Variable | Description | Default |
+| --- | --- | --- |
+| `XUI_DB_TYPE` | Database backend: `sqlite` or `postgres` | `sqlite` |
+| `XUI_DB_DSN` | PostgreSQL connection string (when `XUI_DB_TYPE=postgres`) | — |
+| `XUI_DB_FOLDER` | Directory for the SQLite database file | `/etc/x-ui` |
+| `XUI_INIT_WEB_BASE_PATH` | The initial URI path for the web panel | `/` |
+| `XUI_ENABLE_FAIL2BAN` | Enable Fail2ban-based IP-limit enforcement | `true` |
+| `XUI_LOG_LEVEL` | Log verbosity (`debug`, `info`, `warning`, `error`) | `info` |
 
-## Schemas
+## Supported Languages
 
-`src/schemas/` is the single source of truth for the xray
-configuration model. Every API response is parsed through it,
-every form field is validated against it, and TypeScript types
-are inferred via `z.infer<typeof X>` — never hand-written.
+The panel UI is available in 13 languages:
 
-```
-schemas/
-├── primitives/      # Atomic reusable schemas (port, protocol, sniffing, …)
-├── api/             # Backend response shapes (e.g. SlimInboundSchema)
-├── forms/           # User-facing form shapes (narrower than api/)
-├── protocols/
-│   ├── inbound/     # Per-protocol settings (vmess, vless, trojan, …)
-│   ├── outbound/
-│   ├── stream/      # Network transports (tcp, ws, grpc, xhttp, kcp, …)
-│   └── security/    # TLS, Reality, none
-├── client.ts, dns.ts, routing.ts, setting.ts, status.ts, xray.ts
-└── _envelope.ts     # Generic `Msg<T>` envelope wrapper
-```
+English · فارسی · العربية · 中文（简体） · 中文（繁體） · Español · Русский · Українська · Türkçe · Tiếng Việt · 日本語 · Bahasa Indonesia · Português (Brasil)
 
-Patterns:
+## Documentation
 
-- **Discriminated unions** for polymorphic data — inbound `settings`
-  is `z.discriminatedUnion('protocol', […])`, same for stream and
-  security.
-- **Three validation layers**, non-overlapping:
-  - API boundary: `parseMsg(msg, schema, ctx)` inside TanStack
-    Query `queryFn` — warn-only in prod, throws in dev
-  - Form input: `antdRule(schema.shape.field)` on every `<Form.Item>` —
-    blocks submit + per-field inline error
-  - Wire request: `Schema.parse(payload)` inside `mutationFn` — throws,
-    because a malformed payload here is always a developer bug
-- **No `.loose()` or `[key: string]: any`** in production schemas.
-  `@typescript-eslint/no-explicit-any: error` is enforced.
+- [Capturing the real client IP](docs/real-client-ip.md) (behind Cloudflare / L4 relays).
+- [Custom subscription templates](docs/custom-subscription-templates.md).
 
-## Form pattern (Pattern A)
+## Credits & License
 
-All non-trivial modals use this single pattern:
+This project is a fork of **[MHSanaei/VPNSTAN](https://github.com/MHSanaei/3x-ui)** and builds on [Xray-core](https://github.com/XTLS/Xray-core) and the original X-UI by [alireza0](https://github.com/alireza0/). Geo routing rules: [Iran v2ray rules](https://github.com/chocolate4u/Iran-v2ray-rules) & [Russia v2ray rules](https://github.com/runetfreedom/russia-v2ray-rules-dat).
 
-```tsx
-const [form] = Form.useForm<InboundFormValues>();
-
-const onFinish = async () => {
-  const values = await form.validateFields();
-  await createInbound.mutateAsync(values);
-};
-
-<Form form={form} onFinish={onFinish}>
-  <Form.Item
-    name="port"
-    label="Port"
-    rules={[antdRule(InboundFormSchema.shape.port, t)]}
-  >
-    <InputNumber min={1} max={65535} />
-  </Form.Item>
-</Form>
-```
-
-No `safeParse`-on-submit handlers, no `useRef<any>` for form
-references, no inline `z.string().min(1)` in rules. Conditional
-fields use `<Form.Item dependencies={...} shouldUpdate>` with the
-nested protocol schema.
-
-## Testing
-
-Vitest runs everything under `src/test/`. Schemas have **golden
-fixture suites** — one JSON per `(protocol × network × security)`
-combination round-tripped through `schema.parse` → link generator
-→ snapshot. Regenerate snapshots after intentional changes:
-
-```sh
-npx vitest run -u
-```
-
-Fixtures live in `src/test/golden/fixtures/` and are auto-discovered
-via `import.meta.glob`.
-
-## Adding a new page
-
-Most new routes go inside the admin SPA (`index.html`) via
-`routes.tsx` — no new HTML or Vite entry needed.
-
-1. Add the page component under `src/pages/<page>/`.
-2. Register it in `src/routes.tsx` under the `/panel/...` tree.
-3. If you need a brand-new top-level bundle (login-style standalone
-   page), add the HTML at `frontend/<page>.html`, an entry at
-   `src/entries/<page>.tsx`, and register it in `rollupOptions.input`
-   in `vite.config.js`. Then add the Go controller call to
-   `serveDistPage(c, "<page>.html")`.
+Licensed under **GPL-3.0**, the same as the upstream project.
